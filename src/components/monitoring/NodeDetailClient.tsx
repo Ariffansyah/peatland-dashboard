@@ -1,0 +1,249 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, MapPin, Wifi, WifiOff, Clock } from "lucide-react";
+import { monitoringRepository } from "@/features/monitoring/services/monitoringService";
+import type { MonitoringNode, MonitoringReading, TrendDataPoint, TimePeriod } from "@/types/domain";
+import { StatusBadge } from "@/components/status/StatusBadge";
+import { RiskTrendChart, WaterLevelChart, SoilMoistureChart } from "@/components/charts/Charts";
+import { LoadingSkeleton, ErrorState } from "@/components/ui/States";
+import { formatRelativeTime, formatFullDate } from "@/lib/constants";
+
+interface NodeDetailClientProps {
+  nodeId: string;
+}
+
+export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
+  const router = useRouter();
+  const [node, setNode] = useState<MonitoringNode | null>(null);
+  const [reading, setReading] = useState<MonitoringReading | null>(null);
+  const [trendData, setTrendData] = useState<TrendDataPoint[]>([]);
+  const [trendPeriod, setTrendPeriod] = useState<TimePeriod>("24h");
+  const [wlPeriod, setWlPeriod] = useState<TimePeriod>("24h");
+  const [smPeriod, setSmPeriod] = useState<TimePeriod>("24h");
+  const [wlData, setWlData] = useState<TrendDataPoint[]>([]);
+  const [smData, setSmData] = useState<TrendDataPoint[]>([]);
+  const [loadingMain, setLoadingMain] = useState(true);
+  const [loadingTrend, setLoadingTrend] = useState(false);
+  const [loadingWl, setLoadingWl] = useState(false);
+  const [loadingSm, setLoadingSm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchMain = useCallback(async () => {
+    setError(null);
+    setLoadingMain(true);
+    try {
+      const [nodeData, readingData, trend, wl, sm] = await Promise.all([
+        monitoringRepository.getNode(nodeId),
+        monitoringRepository.getLatestReading(nodeId),
+        monitoringRepository.getTrendData(nodeId, "24h"),
+        monitoringRepository.getTrendData(nodeId, "24h"),
+        monitoringRepository.getTrendData(nodeId, "24h"),
+      ]);
+      if (!nodeData) {
+        setError(`Node ${nodeId} tidak ditemukan.`);
+        return;
+      }
+      setNode(nodeData);
+      setReading(readingData);
+      setTrendData(trend);
+      setWlData(wl);
+      setSmData(sm);
+    } catch {
+      setError("Gagal memuat detail node.");
+    } finally {
+      setLoadingMain(false);
+    }
+  }, [nodeId]);
+
+  const fetchTrend = useCallback(async (period: TimePeriod) => {
+    setLoadingTrend(true);
+    try {
+      const data = await monitoringRepository.getTrendData(nodeId, period);
+      setTrendData(data);
+    } finally {
+      setLoadingTrend(false);
+    }
+  }, [nodeId]);
+
+  const fetchWl = useCallback(async (period: TimePeriod) => {
+    setLoadingWl(true);
+    try {
+      const data = await monitoringRepository.getTrendData(nodeId, period);
+      setWlData(data);
+    } finally {
+      setLoadingWl(false);
+    }
+  }, [nodeId]);
+
+  const fetchSm = useCallback(async (period: TimePeriod) => {
+    setLoadingSm(true);
+    try {
+      const data = await monitoringRepository.getTrendData(nodeId, period);
+      setSmData(data);
+    } finally {
+      setLoadingSm(false);
+    }
+  }, [nodeId]);
+
+  useEffect(() => { fetchMain(); }, [fetchMain]);
+  useEffect(() => { if (!loadingMain) fetchTrend(trendPeriod); }, [trendPeriod, fetchTrend, loadingMain]);
+  useEffect(() => { if (!loadingMain) fetchWl(wlPeriod); }, [wlPeriod, fetchWl, loadingMain]);
+  useEffect(() => { if (!loadingMain) fetchSm(smPeriod); }, [smPeriod, fetchSm, loadingMain]);
+
+  if (error) {
+    return (
+      <div className="page-content">
+        <button className="back-link" onClick={() => router.back()} id="back-button">
+          <ArrowLeft size={16} aria-hidden="true" /> Kembali ke Monitoring
+        </button>
+        <ErrorState message={error} onRetry={fetchMain} />
+      </div>
+    );
+  }
+
+  const statusCls = reading?.riskIndex.status.toLowerCase() ?? "aman";
+
+  return (
+    <div className="page-content">
+      {/* Back */}
+      <button className="back-link" onClick={() => router.back()} id="back-button">
+        <ArrowLeft size={16} aria-hidden="true" /> Kembali ke Monitoring
+      </button>
+
+      {/* Node Header */}
+      {loadingMain ? (
+        <div style={{ marginBottom: "var(--space-6)" }} data-aos="fade-down">
+          <div className="skeleton skeleton-text xl" style={{ width: "200px", marginBottom: "12px" }} />
+          <div className="skeleton skeleton-text" style={{ width: "300px" }} />
+        </div>
+      ) : node ? (
+        <div className="node-detail-header" data-aos="fade-down" data-aos-duration="400">
+          <div className="node-detail-identity">
+            <h1 className="node-detail-name">{node.name}</h1>
+            <div className="node-detail-meta">
+              {node.blockName && (
+                <div className="node-detail-meta-item">
+                  <MapPin size={13} aria-hidden="true" />
+                  {node.blockName}
+                </div>
+              )}
+              <div
+                className="node-detail-meta-item"
+                role="status"
+                aria-label={`Status koneksi: ${node.connectionStatus}`}
+                style={{ color: node.connectionStatus === "ONLINE" ? "var(--status-aman)" : "var(--status-awas)" }}
+              >
+                {node.connectionStatus === "ONLINE"
+                  ? <><Wifi size={13} aria-hidden="true" /> Online</>
+                  : <><WifiOff size={13} aria-hidden="true" /> Offline</>}
+              </div>
+              {node.lastSeenAt && (
+                <div className="node-detail-meta-item">
+                  <Clock size={13} aria-hidden="true" />
+                  Data terakhir: {formatRelativeTime(node.lastSeenAt)}
+                </div>
+              )}
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-tertiary)", background: "var(--bg-elevated)", padding: "2px 8px", borderRadius: "4px" }}>
+                {node.id}
+              </span>
+            </div>
+          </div>
+          {reading && <StatusBadge status={reading.riskIndex.status} size="md" />}
+        </div>
+      ) : null}
+
+      {/* Current Reading Cards */}
+      {loadingMain ? (
+        <div className="dashboard-grid grid-3" style={{ marginBottom: "var(--space-5)" }}>
+          {[0,1,2].map((i) => <div key={i} data-aos="fade-up" data-aos-delay={i*60}><LoadingSkeleton /></div>)}
+        </div>
+      ) : reading ? (
+        <div className="dashboard-grid grid-3" style={{ marginBottom: "var(--space-5)" }}>
+          {/* Risk Index */}
+          <div className="card" style={{ borderTop: `3px solid var(--status-${statusCls})` }} data-aos="fade-up" data-aos-delay="0">
+            <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>Indeks Kerawanan</div>
+            <div className={`risk-index-value ${statusCls}`} aria-label={`Indeks Kerawanan: ${reading.riskIndex.value}`}>
+              {reading.riskIndex.value}
+              <span style={{ fontSize: "1rem", fontWeight: 500, color: "var(--text-tertiary)", marginLeft: "4px" }}>/100</span>
+            </div>
+            <StatusBadge status={reading.riskIndex.status} />
+            <div style={{ marginTop: "12px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+              {formatFullDate(reading.riskIndex.calculatedAt)}
+            </div>
+          </div>
+
+          {/* Water Level */}
+          <div className="card" data-aos="fade-up" data-aos-delay="80">
+            <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>Tinggi Muka Air</div>
+            <div className="param-value">
+              <span>{reading.waterLevel.value}</span>
+              <span className="param-unit">{reading.waterLevel.unit}</span>
+            </div>
+            <div className="param-desc">dari permukaan</div>
+            <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+              {formatFullDate(reading.recordedAt)}
+            </div>
+          </div>
+
+          {/* Soil Moisture */}
+          <div className="card" data-aos="fade-up" data-aos-delay="160">
+            <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>Kelembaban Tanah</div>
+            <div className="param-value">
+              <span>{reading.soilMoisture.value}</span>
+              <span className="param-unit">{reading.soilMoisture.unit}</span>
+            </div>
+            {reading.soilMoisture.unit === "%" && (
+              <div className="risk-scale-bar" role="progressbar" aria-valuenow={reading.soilMoisture.value} aria-valuemin={0} aria-valuemax={100} style={{ marginTop: "12px" }}>
+                <div
+                  className="risk-scale-fill"
+                  style={{
+                    width: `${reading.soilMoisture.value}%`,
+                    background: reading.soilMoisture.value < 35
+                      ? "var(--status-awas)"
+                      : reading.soilMoisture.value < 50
+                      ? "var(--status-siaga)"
+                      : "var(--status-aman)",
+                  }}
+                />
+              </div>
+            )}
+            <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+              {formatFullDate(reading.recordedAt)}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card" style={{ marginBottom: "var(--space-5)", textAlign: "center", padding: "var(--space-8)", color: "var(--text-secondary)" }}>
+          Belum ada pembacaan sensor untuk node ini.
+        </div>
+      )}
+
+      {/* Charts */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+        <RiskTrendChart
+          data={trendData}
+          period={trendPeriod}
+          onPeriodChange={(p) => { setTrendPeriod(p); }}
+          isLoading={loadingTrend || loadingMain}
+          title={`Tren Indeks Kerawanan — ${node?.name ?? nodeId}`}
+        />
+        <div className="dashboard-grid grid-2">
+          <WaterLevelChart
+            data={wlData}
+            period={wlPeriod}
+            onPeriodChange={(p) => { setWlPeriod(p); }}
+            isLoading={loadingWl || loadingMain}
+          />
+          <SoilMoistureChart
+            data={smData}
+            period={smPeriod}
+            onPeriodChange={(p) => { setSmPeriod(p); }}
+            isLoading={loadingSm || loadingMain}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
