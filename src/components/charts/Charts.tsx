@@ -25,7 +25,7 @@ interface ChartProps {
   title?: string;
 }
 
-const PERIODS: TimePeriod[] = ["1h", "6h", "24h", "7d", "30d"];
+const PERIODS: TimePeriod[] = ["24h", "7d", "30d"];
 
 function PeriodTabs({ period, onChange }: { period: TimePeriod; onChange: (p: TimePeriod) => void }) {
   return (
@@ -138,7 +138,7 @@ export function RiskTrendChart({ data, period, onPeriodChange, isLoading, title 
                 <Tooltip
                   contentStyle={tooltipStyle}
                   labelStyle={labelStyle}
-                  formatter={(val: number) => [`${val}`, "IKG"]}
+                  formatter={(val: unknown) => [`${val ?? ""}`, "IKG"]}
                   cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
                 />
                 {/* Threshold lines */}
@@ -221,7 +221,7 @@ export function WaterLevelChart({ data, period, onPeriodChange, isLoading }: Cha
                 <Tooltip
                   contentStyle={tooltipStyle}
                   labelStyle={labelStyle}
-                  formatter={(val: number) => [`${val} cm`, "TMA"]}
+                  formatter={(val: unknown) => [`${val ?? ""} cm`, "TMA"]}
                   cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
                 />
                 <Area
@@ -288,7 +288,7 @@ export function SoilMoistureChart({ data, period, onPeriodChange, isLoading }: C
                 <Tooltip
                   contentStyle={tooltipStyle}
                   labelStyle={labelStyle}
-                  formatter={(val: number) => [`${val}%`, "Kelembaban"]}
+                  formatter={(val: unknown) => [`${val ?? ""}%`, "Kelembaban"]}
                   cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
                 />
                 <ReferenceLine
