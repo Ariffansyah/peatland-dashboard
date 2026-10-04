@@ -22,7 +22,7 @@ export interface SoilMoisture {
   unit: string;
 }
 
-export type SensorType = "moisture" | "ultrasonic" | "temperature" | "risk";
+export type SensorType = "moisture" | "tma" | "temperature" | "risk";
 
 export interface MonitoringReading {
   id: string;
@@ -31,7 +31,7 @@ export interface MonitoringReading {
   waterLevel: WaterLevel;
   soilMoisture: SoilMoisture;
   temperature: WaterLevel;
-  ultrasonic: WaterLevel;
+  tma: WaterLevel;
   riskIndex: RiskIndex;
 }
 
@@ -73,7 +73,7 @@ export interface TrendDataPoint {
   waterLevel: number;
   soilMoisture: number;
   temperature: number;
-  ultrasonic: number;
+  tma: number;
   riskIndex: number;
 }
 

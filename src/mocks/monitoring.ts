@@ -14,7 +14,7 @@ import type {
 export const mockNodes: MonitoringNode[] = [
   {
     id: "NODE-001",
-    name: "SoilMoisture",
+    name: "Kelembaban Tanah",
     blockName: "Blok A",
     sensorType: "moisture",
     location: { latitude: -2.1234, longitude: 113.4567 },
@@ -23,16 +23,16 @@ export const mockNodes: MonitoringNode[] = [
   },
   {
     id: "NODE-002",
-    name: "Ultrasonic",
+    name: "TMA",
     blockName: "Blok A",
-    sensorType: "ultrasonic",
+    sensorType: "tma",
     location: { latitude: -2.1289, longitude: 113.4612 },
     lastSeenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     connectionStatus: "ONLINE",
   },
   {
     id: "NODE-003",
-    name: "Temperature",
+    name: "Suhu",
     blockName: "Blok B",
     sensorType: "temperature",
     location: { latitude: -2.1356, longitude: 113.4698 },
@@ -42,7 +42,7 @@ export const mockNodes: MonitoringNode[] = [
   {
     // Live: data diambil dari Supabase (sensor_logs) oleh monitoringService
     id: "NODE-004",
-    name: "Result",
+    name: "Hasil IKG",
     blockName: "Blok B",
     sensorType: "risk",
     location: { latitude: -2.1401, longitude: 113.4723 },
@@ -60,7 +60,7 @@ export const mockLatestReadings: MonitoringReading[] = [
     waterLevel: { value: -31, unit: "cm" },
     soilMoisture: { value: 68, unit: "%" },
     temperature: { value: 32.5, unit: "°C" },
-    ultrasonic: { value: 42, unit: "cm" },
+    tma: { value: -31, unit: "cm" },
     riskIndex: { value: 42, status: "SIAGA", calculatedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(), previousValue: 35 },
   },
   {
@@ -70,7 +70,7 @@ export const mockLatestReadings: MonitoringReading[] = [
     waterLevel: { value: -18, unit: "cm" },
     soilMoisture: { value: 81, unit: "%" },
     temperature: { value: 29.1, unit: "°C" },
-    ultrasonic: { value: 28, unit: "cm" },
+    tma: { value: -18, unit: "cm" },
     riskIndex: { value: 22, status: "AMAN", calculatedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(), previousValue: 24 },
   },
   {
@@ -80,7 +80,7 @@ export const mockLatestReadings: MonitoringReading[] = [
     waterLevel: { value: -46, unit: "cm" },
     soilMoisture: { value: 41, unit: "%" },
     temperature: { value: 38.4, unit: "°C" },
-    ultrasonic: { value: 74, unit: "cm" },
+    tma: { value: -46, unit: "cm" },
     riskIndex: { value: 74, status: "AWAS", calculatedAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(), previousValue: 68 },
   },
 ];
@@ -90,7 +90,7 @@ export const mockLatestReadings: MonitoringReading[] = [
 export const mockSystemStatus: SystemStatus = {
   overallStatus: "SIAGA",
   totalNodes: 4,
-  onlineNodes: 4,
+  onlineNodes: 3,
   lastUpdatedAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
   isConnected: true,
 };
@@ -101,7 +101,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-001",
     nodeId: "NODE-003",
-    nodeName: "Temperature",
+    nodeName: "Suhu",
     blockName: "Blok B",
     status: "AWAS",
     title: "Status Kerawanan AWAS",
@@ -112,7 +112,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-002",
     nodeId: "NODE-001",
-    nodeName: "SoilMoisture",
+    nodeName: "Kelembaban Tanah",
     blockName: "Blok A",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
@@ -123,7 +123,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-003",
     nodeId: "NODE-002",
-    nodeName: "Ultrasonic",
+    nodeName: "TMA",
     blockName: "Blok A",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
@@ -134,7 +134,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-004",
     nodeId: "NODE-003",
-    nodeName: "Temperature",
+    nodeName: "Suhu",
     blockName: "Blok B",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
@@ -152,31 +152,29 @@ function generateTrendData(nodeId: string, hours: number): TrendDataPoint[] {
   const interval = (hours * 60 * 60 * 1000) / 48; // 48 data points
 
   // Seed values per node
-  const seeds: Record<string, { wl: number; sm: number; tp: number; us: number; ri: number }> = {
-    "NODE-001": { wl: -28, sm: 72, tp: 31, us: 45, ri: 35 },
-    "NODE-002": { wl: -16, sm: 83, tp: 29, us: 28, ri: 20 },
-    "NODE-003": { wl: -38, sm: 48, tp: 37, us: 68, ri: 58 },
+  const seeds: Record<string, { wl: number; sm: number; tp: number; ri: number }> = {
+    "NODE-001": { wl: -28, sm: 72, tp: 31, ri: 35 },
+    "NODE-002": { wl: -16, sm: 83, tp: 29, ri: 20 },
+    "NODE-003": { wl: -38, sm: 48, tp: 37, ri: 58 },
   };
 
-  const seed = seeds[nodeId] ?? { wl: -25, sm: 70, tp: 32, us: 45, ri: 30 };
+  const seed = seeds[nodeId] ?? { wl: -25, sm: 70, tp: 32, ri: 30 };
   let wl = seed.wl;
   let sm = seed.sm;
   let tp = seed.tp;
-  let us = seed.us;
   let ri = seed.ri;
 
   for (let i = 48; i >= 0; i--) {
     wl = Math.max(-60, Math.min(-5, wl + (Math.random() - 0.48) * 2.5));
     sm = Math.max(20, Math.min(95, sm + (Math.random() - 0.45) * 3));
     tp = Math.max(25, Math.min(45, tp + (Math.random() - 0.5) * 0.8));
-    us = Math.max(10, Math.min(100, us + (Math.random() - 0.48) * 2));
     ri = Math.max(0, Math.min(100, ri + (Math.random() - 0.45) * 4));
     points.push({
       timestamp: new Date(now - i * interval).toISOString(),
       waterLevel: Math.round(wl * 10) / 10,
       soilMoisture: Math.round(sm * 10) / 10,
       temperature: Math.round(tp * 10) / 10,
-      ultrasonic: Math.round(us * 10) / 10,
+      tma: Math.round(wl * 10) / 10,
       riskIndex: Math.round(ri),
     });
   }

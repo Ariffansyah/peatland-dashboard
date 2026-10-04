@@ -31,7 +31,7 @@ export interface MonitoringRepository {
 
 // ponytail: semua node live membaca baris sensor_logs yang sama; tambah kolom node_id di sensor_logs saat ESP32 berikutnya terpasang.
 const REAL_NODE = "NODE-001";
-// NODE-002 Ultrasonic, NODE-003 Temperature, NODE-004 Result (risk_index/IKG).
+// NODE-002 TMA, NODE-003 Suhu, NODE-004 Hasil IKG (risk_index/IKG).
 const LIVE_NODES = new Set([REAL_NODE, "NODE-002", "NODE-003", "NODE-004"]);
 
 type SensorLog = { created_at: string; tma: number; moisture: number; temperature: number; risk_index: number };
@@ -70,7 +70,7 @@ const toReading = (log: SensorLog, prev: SensorLog | undefined, nodeId: string):
   waterLevel: { value: log.tma, unit: "cm" },
   soilMoisture: { value: log.moisture, unit: "%" },
   temperature: { value: log.temperature, unit: "°C" },
-  ultrasonic: { value: log.tma, unit: "cm" },
+  tma: { value: log.tma, unit: "cm" },
   riskIndex: {
     value: log.risk_index,
     status: toStatus(log.risk_index),
@@ -123,7 +123,8 @@ function statusChanges(logs: SensorLog[]): RiskAlert[] {
         message:
           (prev
             ? `Indeks kerawanan berubah dari ${prev.risk_index} menjadi ${log.risk_index}.`
-            : `Indeks kerawanan ${log.risk_index}.`) + ` TMA ${log.tma} cm, kelembaban tanah ${log.moisture}%.`,
+            : `Indeks kerawanan ${log.risk_index}.`) +
+          ` TMA ${log.tma} cm, kelembaban tanah ${log.moisture}%, suhu ${log.temperature}°C.`,
         createdAt: log.created_at,
       });
     }
@@ -174,7 +175,7 @@ class MonitoringService implements MonitoringRepository {
       waterLevel: l.tma,
       soilMoisture: l.moisture,
       temperature: l.temperature,
-      ultrasonic: l.tma,
+      tma: l.tma,
       riskIndex: l.risk_index,
     }));
   }

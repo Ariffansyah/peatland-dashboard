@@ -51,9 +51,9 @@ export function MonitoringClient() {
   const getSensorType = (node: MonitoringNode): SensorType => {
     if (node.sensorType) return node.sensorType;
     const n = node.name.toLowerCase();
-    if (n.includes("moist")) return "moisture";
-    if (n.includes("ultra")) return "ultrasonic";
-    if (n.includes("temp")) return "temperature";
+    if (n.includes("lembab")) return "moisture";
+    if (n.includes("tma")) return "tma";
+    if (n.includes("suhu")) return "temperature";
     return "risk";
   };
 
@@ -61,12 +61,12 @@ export function MonitoringClient() {
     switch (getSensorType(node)) {
       case "moisture":
         return { label: SENSOR_META.moisture.short, value: reading.soilMoisture.value, unit: reading.soilMoisture.unit };
-      case "ultrasonic":
-        return { label: SENSOR_META.ultrasonic.short, value: reading.ultrasonic.value, unit: reading.ultrasonic.unit };
+      case "tma":
+        return { label: SENSOR_META.tma.short, value: reading.tma.value, unit: reading.tma.unit };
       case "temperature":
         return { label: SENSOR_META.temperature.short, value: reading.temperature.value, unit: reading.temperature.unit };
       case "risk":
-        return null;
+        return { label: "TMA", value: reading.waterLevel.value, unit: reading.waterLevel.unit };
     }
   };
 

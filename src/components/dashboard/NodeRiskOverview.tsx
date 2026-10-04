@@ -19,9 +19,9 @@ export function NodeRiskOverview({ nodes, readings }: NodeRiskOverviewProps) {
   const getSensorType = (node: MonitoringNode): SensorType => {
     if (node.sensorType) return node.sensorType;
     const n = node.name.toLowerCase();
-    if (n.includes("moist")) return "moisture";
-    if (n.includes("ultra")) return "ultrasonic";
-    if (n.includes("temp")) return "temperature";
+    if (n.includes("lembab")) return "moisture";
+    if (n.includes("tma")) return "tma";
+    if (n.includes("suhu")) return "temperature";
     return "risk";
   };
 
@@ -29,12 +29,12 @@ export function NodeRiskOverview({ nodes, readings }: NodeRiskOverviewProps) {
     switch (getSensorType(node)) {
       case "moisture":
         return `${reading.soilMoisture.value} ${reading.soilMoisture.unit}`;
-      case "ultrasonic":
-        return `${reading.ultrasonic.value} ${reading.ultrasonic.unit}`;
+      case "tma":
+        return `${reading.tma.value} ${reading.tma.unit}`;
       case "temperature":
         return `${reading.temperature.value} ${reading.temperature.unit}`;
       case "risk":
-        return "—";
+        return `${reading.waterLevel.value} cm · ${reading.soilMoisture.value}%`;
     }
   };
 

@@ -6,7 +6,7 @@ import { ArrowLeft, MapPin, Wifi, WifiOff, Clock } from "lucide-react";
 import { monitoringRepository } from "@/features/monitoring/services/monitoringService";
 import type { MonitoringNode, MonitoringReading, TrendDataPoint, TimePeriod, SensorType } from "@/types/domain";
 import { StatusBadge } from "@/components/status/StatusBadge";
-import { RiskTrendChart, SoilMoistureChart, TemperatureChart, UltrasonicChart } from "@/components/charts/Charts";
+import { RiskTrendChart, SoilMoistureChart, TemperatureChart, WaterLevelChart } from "@/components/charts/Charts";
 import { LoadingSkeleton, ErrorState } from "@/components/ui/States";
 import { formatRelativeTime, formatFullDate, SENSOR_META } from "@/lib/constants";
 import { usePolling } from "@/lib/usePolling";
@@ -19,9 +19,9 @@ interface NodeDetailClientProps {
 function resolveSensorType(node: MonitoringNode | null): SensorType {
   if (node?.sensorType) return node.sensorType;
   const n = node?.name.toLowerCase() ?? "";
-  if (n.includes("moist")) return "moisture";
-  if (n.includes("ultra")) return "ultrasonic";
-  if (n.includes("temp")) return "temperature";
+  if (n.includes("lembab")) return "moisture";
+  if (n.includes("tma")) return "tma";
+  if (n.includes("suhu")) return "temperature";
   return "risk";
 }
 
@@ -157,6 +157,18 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
             </div>
           </div>
 
+          <div className="card" data-aos="fade-up" data-aos-delay="40">
+            <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>Tinggi Muka Air</div>
+            <div className="param-value">
+              <span>{reading.waterLevel.value}</span>
+              <span className="param-unit">{reading.waterLevel.unit}</span>
+            </div>
+            <div className="param-desc">dari permukaan tanah</div>
+            <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+              {formatFullDate(reading.recordedAt)}
+            </div>
+          </div>
+
           {(sensorType === "moisture" || isRiskNode) && (
             <div className="card" data-aos="fade-up" data-aos-delay="80">
               <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>{SENSOR_META.moisture.label}</div>
@@ -185,20 +197,6 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
             </div>
           )}
 
-          {(sensorType === "ultrasonic" || isRiskNode) && (
-            <div className="card" data-aos="fade-up" data-aos-delay="120">
-              <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>{SENSOR_META.ultrasonic.label}</div>
-              <div className="param-value">
-                <span>{reading.ultrasonic.value}</span>
-                <span className="param-unit">{reading.ultrasonic.unit}</span>
-              </div>
-              <div className="param-desc">jarak terbaca sensor</div>
-              <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                {formatFullDate(reading.recordedAt)}
-              </div>
-            </div>
-          )}
-
           {(sensorType === "temperature" || isRiskNode) && (
             <div className="card" data-aos="fade-up" data-aos-delay="160">
               <div className="card-label" style={{ marginBottom: "var(--space-3)" }}>{SENSOR_META.temperature.label}</div>
@@ -206,7 +204,7 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
                 <span>{reading.temperature.value}</span>
                 <span className="param-unit">{reading.temperature.unit}</span>
               </div>
-              <div className="param-desc">suhu udara sekitar sensor</div>
+              <div className="param-desc">suhu lingkungan sensor</div>
               <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
                 {formatFullDate(reading.recordedAt)}
               </div>
@@ -229,14 +227,12 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
           title={`Tren Indeks Kerawanan, ${node?.name ?? nodeId}`}
         />
         <div className="dashboard-grid grid-2">
-          {(sensorType === "ultrasonic" || isRiskNode) && (
-            <UltrasonicChart
-              data={chartData}
-              period={period}
-              onPeriodChange={setPeriod}
-              isLoading={loadingChart || loadingMain}
-            />
-          )}
+          <WaterLevelChart
+            data={chartData}
+            period={period}
+            onPeriodChange={setPeriod}
+            isLoading={loadingChart || loadingMain}
+          />
           {(sensorType === "moisture" || isRiskNode) && (
             <SoilMoistureChart
               data={chartData}

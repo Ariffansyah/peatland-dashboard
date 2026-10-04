@@ -43,7 +43,7 @@ export const CONNECTION_CONFIG = {
 
 export const SENSOR_META = {
   moisture: { label: "Kelembaban Tanah", short: "Kelembaban", unit: "%" },
-  ultrasonic: { label: "Jarak Ultrasonik", short: "Ultrasonik", unit: "cm" },
+  tma: { label: "TMA", short: "TMA", unit: "cm" },
   temperature: { label: "Suhu", short: "Suhu", unit: "°C" },
   risk: { label: "Indeks Kerawanan", short: "Indeks", unit: "/100" },
 } as const;
