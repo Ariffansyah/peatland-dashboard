@@ -34,7 +34,7 @@ const REAL_NODE = "NODE-001";
 // NODE-002 Ultrasonic, NODE-003 Temperature, NODE-004 Result (risk_index/IKG).
 const LIVE_NODES = new Set([REAL_NODE, "NODE-002", "NODE-003", "NODE-004"]);
 
-type SensorLog = { created_at: string; tma: number; moisture: number; ultrasonic: number; risk_index: number };
+type SensorLog = { created_at: string; tma: number; moisture: number; temperature: number; risk_index: number };
 
 const PERIOD_HOURS: Record<TimePeriod, number> = { "24h": 24, "7d": 168, "30d": 720 };
 
@@ -67,10 +67,10 @@ const toReading = (log: SensorLog, prev: SensorLog | undefined, nodeId: string):
   id: `${nodeId}-${log.created_at}`,
   nodeId,
   recordedAt: log.created_at,
-  waterLevel: { value: log.ultrasonic, unit: "cm" },
+  waterLevel: { value: log.tma, unit: "cm" },
   soilMoisture: { value: log.moisture, unit: "%" },
-  temperature: { value: log.tma, unit: "°C" },
-  ultrasonic: { value: log.ultrasonic, unit: "cm" },
+  temperature: { value: log.temperature, unit: "°C" },
+  ultrasonic: { value: log.tma, unit: "cm" },
   riskIndex: {
     value: log.risk_index,
     status: toStatus(log.risk_index),
@@ -171,10 +171,10 @@ class MonitoringService implements MonitoringRepository {
     }
     return (await fetchLogs({ hours: PERIOD_HOURS[period] })).toReversed().map((l) => ({
       timestamp: l.created_at,
-      waterLevel: l.ultrasonic,
+      waterLevel: l.tma,
       soilMoisture: l.moisture,
-      temperature: l.tma,
-      ultrasonic: l.ultrasonic,
+      temperature: l.temperature,
+      ultrasonic: l.tma,
       riskIndex: l.risk_index,
     }));
   }
