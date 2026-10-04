@@ -10,6 +10,8 @@ import type {
 } from "@/types/domain";
 
 // ─── Nodes ───────────────────────────────────────────────────────────────────
+// Lokasi dummy: lahan gambut Sebangau, Palangka Raya, Kalimantan Tengah.
+// Node saling berdekatan (±300–500 m) dalam satu blok pemantauan.
 
 export const mockNodes: MonitoringNode[] = [
   {

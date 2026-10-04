@@ -82,13 +82,33 @@ const toReading = (log: SensorLog, prev: SensorLog | undefined, nodeId: string):
 const highestRisk = (readings: MonitoringReading[]) =>
   readings.reduce<MonitoringReading | null>((w, r) => (!w || r.riskIndex.value > w.riskIndex.value ? r : w), null);
 
+// Dummy node: simulasi telemetri yang "dikirim" tiap poll (nilai berfluktuasi di sekitar baseline mock,
+// timestamp = sekarang) agar peta/popup terasa realtime. Node live tetap dari Supabase.
+const round1 = (v: number) => Math.round(v * 10) / 10;
+const wobble = (v: number, amp: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v + (Math.random() - 0.5) * amp));
+
+function simulateReading(base: MonitoringReading): MonitoringReading {
+  const now = new Date().toISOString();
+  const ri = Math.round(wobble(base.riskIndex.value, 4, 0, 100));
+  return {
+    ...base,
+    id: `${base.nodeId}-${now}`,
+    recordedAt: now,
+    waterLevel: { ...base.waterLevel, value: round1(wobble(base.waterLevel.value, 2, -80, 0)) },
+    soilMoisture: { ...base.soilMoisture, value: round1(wobble(base.soilMoisture.value, 3, 0, 100)) },
+    riskIndex: { value: ri, status: toStatus(ri), calculatedAt: now, previousValue: base.riskIndex.value },
+  };
+}
+
 // Semua node + pembacaan terakhirnya; LIVE_NODES diganti data Supabase.
 async function snapshot() {
   const [latest, prev] = await fetchLogs({ limit: 2 });
+  const now = new Date().toISOString();
   return {
     nodes: mockNodes.map((n): MonitoringNode =>
       !LIVE_NODES.has(n.id)
-        ? n
+        ? { ...n, lastSeenAt: n.connectionStatus === "ONLINE" ? now : n.lastSeenAt }
         : {
             ...n,
             lastSeenAt: latest?.created_at,
@@ -97,7 +117,7 @@ async function snapshot() {
     ),
     readings: mockNodes.flatMap((n) =>
       !LIVE_NODES.has(n.id)
-        ? mockLatestReadings.filter((r) => r.nodeId === n.id)
+        ? mockLatestReadings.filter((r) => r.nodeId === n.id).map(simulateReading)
         : latest
           ? [toReading(latest, prev, n.id)]
           : []

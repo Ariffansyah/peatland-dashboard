@@ -1847,3 +1847,157 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 [data-aos] { pointer-events: none; }
 [data-aos].aos-animate { pointer-events: auto; }
+
+/* ═══════════════════════════════════════════════════════════════
+   NODE MAP (Leaflet / OpenStreetMap)
+   ═══════════════════════════════════════════════════════════════ */
+
+.map-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, 320px);
+  min-height: 420px;
+}
+@media (max-width: 900px) {
+  .map-layout-grid { grid-template-columns: 1fr; }
+  .map-layout-grid > div:last-child { border-left: none !important; border-top: 1px solid var(--border-subtle); }
+}
+
+.leaflet-container { font-family: var(--font-body); }
+.custom-map-marker { background: transparent; border: none; }
+
+.node-marker {
+  position: relative;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform var(--transition-bounce);
+}
+.node-marker:hover { transform: scale(1.12); }
+.node-marker.is-selected { transform: scale(1.22); }
+.node-marker__ring {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: var(--c);
+  opacity: 0.35;
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.node-marker__core {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #0f1712;
+  border: 3px solid var(--c);
+  box-shadow: 0 0 12px var(--c);
+  display: flex; align-items: center; justify-content: center;
+}
+.node-marker__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.node-marker__label {
+  position: absolute; top: -24px;
+  white-space: nowrap;
+  background: rgba(10, 15, 10, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  font-size: 11px; font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  pointer-events: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+.node-marker.is-selected .node-marker__label { border-color: var(--c); }
+
+@keyframes pulseRing {
+  0%   { transform: scale(0.6); opacity: 0.55; }
+  80%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ── Popup telemetri real-time ─────────────────────────────── */
+.node-popup-wrap .leaflet-popup-content-wrapper {
+  background: var(--bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0;
+}
+.node-popup-wrap .leaflet-popup-content { margin: 0; width: auto !important; }
+.node-popup-wrap .leaflet-popup-tip { background: var(--bg-elevated); border: 1px solid var(--border-strong); }
+.node-popup-wrap a.leaflet-popup-close-button { color: var(--text-secondary); top: 6px; right: 6px; }
+.node-popup-wrap a.leaflet-popup-close-button:hover { color: var(--text-primary); }
+
+.node-popup { --c: var(--accent); padding: 14px 14px 12px; min-width: 250px; }
+.node-popup__head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+  margin-bottom: 12px; padding-right: 18px;
+}
+.node-popup__title { font-family: var(--font-display); font-size: 1rem; font-weight: 700; line-height: 1.2; }
+.node-popup__sub { font-size: 0.68rem; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 2px; }
+.node-popup__status {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
+  padding: 3px 8px; border-radius: 999px;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+}
+.node-popup__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.node-popup__metric {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-default);
+  animation: telemetryFlash 0.9s ease-out;
+}
+.node-popup__metric.is-risk { border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+.node-popup__metric span {
+  display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-secondary); margin-bottom: 2px;
+}
+.node-popup__metric b {
+  font-family: var(--font-mono); font-size: 1.05rem; font-weight: 600;
+  display: flex; align-items: baseline; gap: 4px;
+}
+.node-popup__metric.is-risk b { color: var(--c); font-size: 1.25rem; }
+.node-popup__metric small { font-size: 0.7rem; font-weight: 400; color: var(--text-secondary); }
+.node-popup__delta { font-size: 0.65rem; font-weight: 600; }
+.node-popup__delta.up { color: var(--status-awas); }
+.node-popup__delta.down { color: var(--status-aman); }
+.node-popup__conn { font-family: var(--font-body) !important; font-size: 0.85rem !important; }
+.node-popup__conn.on { color: var(--status-aman); }
+.node-popup__conn.off { color: var(--status-awas); }
+.node-popup__foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;
+  margin-top: 10px; font-size: 0.66rem; color: var(--text-secondary);
+}
+.node-popup__src {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  background: rgba(148, 163, 184, 0.12); color: var(--text-secondary);
+}
+.node-popup__src i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: dot-pulse 1.6s infinite; }
+.node-popup__src.is-live { background: var(--accent-subtle); color: var(--accent); }
+.node-popup__empty { font-size: 0.8rem; color: var(--text-secondary); padding: 6px 0; }
+.leaflet-container a.node-popup__link {
+  display: block; margin-top: 10px; text-align: center;
+  font-size: 0.75rem; font-weight: 600; text-decoration: none;
+  color: var(--accent);
+  padding: 7px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  transition: background var(--transition-fast);
+}
+.leaflet-container a.node-popup__link:hover { background: var(--accent-subtle); }
+
+.map-telemetry-tile {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  animation: telemetryFlash 0.9s ease-out;
+}
+.map-telemetry-tile__label { font-size: 0.7rem; color: var(--text-tertiary); text-transform: uppercase; }
+.map-telemetry-tile__value { font-size: 1.25rem; font-weight: 700; font-family: var(--font-mono); }
+
+/* Kilatan halus setiap pembacaan baru masuk */
+@keyframes telemetryFlash {
+  0%   { box-shadow: 0 0 0 0 var(--accent-glow); background-color: var(--accent-glow); }
+  100% { box-shadow: 0 0 0 6px transparent; }
+}

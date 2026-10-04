@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, MapPin, Radio, Wifi, WifiOff, Layers, ExternalLink } from "lucide-react";
+import { ArrowRight, MapPin, Radio, Wifi, WifiOff, Layers } from "lucide-react";
 import type { MonitoringNode, MonitoringReading, RiskStatus } from "@/types/domain";
 import { StatusBadge } from "@/components/status/StatusBadge";
-import { formatRelativeTime } from "@/lib/constants";
+import { formatRelativeTime, formatTimestamp } from "@/lib/constants";
 import "leaflet/dist/leaflet.css";
 
 interface NodeMapProps {
@@ -18,43 +18,210 @@ const STATUS_COLORS: Record<RiskStatus, string> = {
   SIAGA: "#eab308",
   AWAS: "#ef4444",
 };
+const NO_DATA_COLOR = "#64748b";
+
+// Node yang datanya berasal dari Supabase (lihat LIVE_NODES di monitoringService)
+const LIVE_NODE_IDS = new Set(["NODE-001", "NODE-004"]);
+
+// Fallback pusat peta: lahan gambut Sebangau, Palangka Raya, Kalimantan Tengah
+const DEFAULT_CENTER: [number, number] = [-2.3175, 113.9045];
+const FOCUS_ZOOM = 17;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LeafletAny = any;
+
+function markerHtml(node: MonitoringNode, color: string, selected: boolean) {
+  return `
+    <div class="node-marker${selected ? " is-selected" : ""}" style="--c:${color}">
+      <span class="node-marker__ring"></span>
+      <span class="node-marker__core"><span class="node-marker__dot"></span></span>
+      <span class="node-marker__label">${node.name}</span>
+    </div>`;
+}
+
+function popupHtml(node: MonitoringNode, reading: MonitoringReading | undefined) {
+  const isLive = LIVE_NODE_IDS.has(node.id);
+  const online = node.connectionStatus === "ONLINE";
+  const sourceBadge = isLive
+    ? `<span class="node-popup__src is-live"><i></i>LIVE · Supabase</span>`
+    : `<span class="node-popup__src"><i></i>Simulasi</span>`;
+
+  if (!reading) {
+    return `
+      <div class="node-popup">
+        <div class="node-popup__head">
+          <div><div class="node-popup__title">${node.name}</div><div class="node-popup__sub">${node.id}</div></div>
+          ${sourceBadge}
+        </div>
+        <div class="node-popup__empty">Menunggu data pertama dari node ini…</div>
+      </div>`;
+  }
+
+  const status = reading.riskIndex.status;
+  const color = STATUS_COLORS[status];
+  const prev = reading.riskIndex.previousValue;
+  const delta = prev === undefined ? null : reading.riskIndex.value - prev;
+  const deltaHtml =
+    delta === null || delta === 0
+      ? ""
+      : `<span class="node-popup__delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${Math.abs(delta)}</span>`;
+
+  return `
+    <div class="node-popup" style="--c:${color}">
+      <div class="node-popup__head">
+        <div>
+          <div class="node-popup__title">${node.name}</div>
+          <div class="node-popup__sub">${node.id} · ${node.blockName ?? "Kalimantan"}</div>
+        </div>
+        <span class="node-popup__status">${status}</span>
+      </div>
+      <div class="node-popup__grid" data-key="${reading.id}">
+        <div class="node-popup__metric is-risk">
+          <span>Indeks Risiko (IKG)</span>
+          <b>${reading.riskIndex.value}${deltaHtml}</b>
+        </div>
+        <div class="node-popup__metric">
+          <span>TMA</span>
+          <b>${reading.waterLevel.value}<small> ${reading.waterLevel.unit}</small></b>
+        </div>
+        <div class="node-popup__metric">
+          <span>Kelembaban</span>
+          <b>${reading.soilMoisture.value}<small> ${reading.soilMoisture.unit}</small></b>
+        </div>
+        <div class="node-popup__metric">
+          <span>Koneksi</span>
+          <b class="node-popup__conn ${online ? "on" : "off"}">${online ? "Online" : node.connectionStatus === "OFFLINE" ? "Offline" : "—"}</b>
+        </div>
+      </div>
+      <div class="node-popup__foot">
+        ${sourceBadge}
+        <span>Diterima ${formatTimestamp(reading.recordedAt)} · ${formatRelativeTime(reading.recordedAt)}</span>
+      </div>
+      <a class="node-popup__link" href="/monitoring/${node.id}">Lihat detail node →</a>
+    </div>`;
+}
 
 export function NodeMap({ nodes, readings }: NodeMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mapInstanceRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markersRef = useRef<Map<string, any>>(new Map());
+  const mapInstanceRef = useRef<LeafletAny>(null);
+  const leafletRef = useRef<LeafletAny>(null);
+  // Marker dibuat sekali per node lalu di-update in-place, agar popup yang terbuka tidak tertutup saat polling.
+  const markersRef = useRef<Map<string, { marker: LeafletAny; iconKey: string; readingId?: string }>>(new Map());
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(nodes[0]?.id ?? null);
 
+  // Ref ke props/state terbaru untuk dipakai di callback Leaflet (hindari stale closure)
+  const nodesRef = useRef(nodes);
+  const readingsRef = useRef(readings);
+  const selectedRef = useRef(selectedNodeId);
+
   const getReading = (nodeId: string) => readings.find((r) => r.nodeId === nodeId);
+
+  function syncMarkers() {
+    const L = leafletRef.current;
+    const map = mapInstanceRef.current;
+    if (!L || !map) return;
+
+    const seen = new Set<string>();
+    for (const node of nodesRef.current) {
+      const lat = node.location?.latitude;
+      const lng = node.location?.longitude;
+      if (lat === undefined || lng === undefined) continue;
+      seen.add(node.id);
+
+      const reading = readingsRef.current.find((r) => r.nodeId === node.id);
+      const color = reading ? STATUS_COLORS[reading.riskIndex.status] : NO_DATA_COLOR;
+      const selected = node.id === selectedRef.current;
+      const iconKey = `${color}|${selected}|${node.name}`;
+      const icon = () =>
+        L.divIcon({
+          className: "custom-map-marker",
+          html: markerHtml(node, color, selected),
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+          popupAnchor: [0, -14],
+        });
+
+      let entry = markersRef.current.get(node.id);
+      if (!entry) {
+        const marker = L.marker([lat, lng], { icon: icon(), riseOnHover: true }).addTo(map);
+        marker.bindPopup(popupHtml(node, reading), {
+          className: "node-popup-wrap",
+          maxWidth: 300,
+          minWidth: 260,
+          closeButton: true,
+          autoPanPadding: [24, 24],
+        });
+        marker.on("click", () => {
+          setSelectedNodeId(node.id);
+          map.flyTo([lat, lng], Math.max(map.getZoom(), FOCUS_ZOOM), { duration: 0.6 });
+        });
+        entry = { marker, iconKey, readingId: reading?.id };
+        markersRef.current.set(node.id, entry);
+        continue;
+      }
+
+      entry.marker.setLatLng([lat, lng]);
+      if (entry.iconKey !== iconKey) {
+        entry.marker.setIcon(icon());
+        entry.iconKey = iconKey;
+      }
+      // Hanya render ulang popup bila ada pembacaan baru (memicu animasi "flash" di nilai)
+      if (entry.readingId !== reading?.id) {
+        entry.marker.setPopupContent(popupHtml(node, reading));
+        entry.readingId = reading?.id;
+      }
+    }
+
+    // Hapus marker node yang sudah tidak ada
+    markersRef.current.forEach((entry, id) => {
+      if (!seen.has(id)) {
+        entry.marker.remove();
+        markersRef.current.delete(id);
+      }
+    });
+  }
 
   // Inisialisasi peta Leaflet sekali di sisi client
   useEffect(() => {
     let isCancelled = false;
+    const markers = markersRef.current;
 
     async function initMap() {
       if (!mapContainerRef.current || mapInstanceRef.current) return;
 
       const L = (await import("leaflet")).default;
       if (isCancelled || !mapContainerRef.current) return;
+      leafletRef.current = L;
 
-      // Pusat Surabaya Utara: sekitar lat -7.210, lng 112.745
       const map = L.map(mapContainerRef.current, {
-        center: [-7.21, 112.748],
-        zoom: 13,
+        center: DEFAULT_CENTER,
+        zoom: 15,
         scrollWheelZoom: false,
       });
 
-      // Free OpenStreetMap Tile Layer
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
-        maxZoom: 18,
+      // Basemap gratis: OpenStreetMap (default) + citra satelit Esri sebagai opsi
+      const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
+        maxZoom: 19,
       }).addTo(map);
+      const satellite = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { attribution: "Tiles &copy; Esri", maxZoom: 19 }
+      );
+      L.control.layers({ OpenStreetMap: osm, Satelit: satellite }, undefined, { position: "topright" }).addTo(map);
+      L.control.scale({ imperial: false }).addTo(map);
 
       mapInstanceRef.current = map;
-      updateMarkers(L, map);
+      syncMarkers();
+
+      // Zoom otomatis agar semua node (yang berdekatan) terlihat
+      const points = nodesRef.current
+        .filter((n) => n.location?.latitude !== undefined && n.location?.longitude !== undefined)
+        .map((n) => [n.location!.latitude!, n.location!.longitude!] as [number, number]);
+      if (points.length > 1) map.fitBounds(points, { padding: [60, 60], maxZoom: 17 });
+      else if (points.length === 1) map.setView(points[0], FOCUS_ZOOM);
     }
 
     initMap();
@@ -64,121 +231,31 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
-        markersRef.current.clear();
       }
+      markers.clear();
     };
   }, []);
 
-  // Update marker ketika nodes atau readings berubah
+  // Sinkronkan marker & popup setiap ada data baru (polling) atau node terpilih berubah
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    import("leaflet").then((mod) => {
-      const L = mod.default;
-      if (mapInstanceRef.current) {
-        updateMarkers(L, mapInstanceRef.current);
-      }
-    });
-  }, [nodes, readings]);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function updateMarkers(L: any, map: any) {
-    // Bersihkan marker lama
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current.clear();
-
-    nodes.forEach((node) => {
-      const lat = node.location?.latitude;
-      const lng = node.location?.longitude;
-      if (lat === undefined || lng === undefined) return;
-
-      const reading = getReading(node.id);
-      const status: RiskStatus = reading?.riskIndex.status ?? "AMAN";
-      const color = STATUS_COLORS[status];
-      const isLive = node.id === "NODE-001" || node.id === "NODE-004";
-
-      // Kustom HTML Marker
-      const customIcon = L.divIcon({
-        className: "custom-map-marker",
-        html: `
-          <div style="
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 36px;
-            height: 36px;
-            cursor: pointer;
-          ">
-            <span style="
-              position: absolute;
-              width: 100%;
-              height: 100%;
-              border-radius: 50%;
-              background: ${color};
-              opacity: 0.35;
-              animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-            "></span>
-            <div style="
-              width: 22px;
-              height: 22px;
-              border-radius: 50%;
-              background: #0f1712;
-              border: 3px solid ${color};
-              box-shadow: 0 0 12px ${color}88;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <div style="
-                width: 7px;
-                height: 7px;
-                border-radius: 50%;
-                background: ${color};
-              "></div>
-            </div>
-            <div style="
-              position: absolute;
-              top: -24px;
-              white-space: nowrap;
-              background: rgba(10, 15, 10, 0.9);
-              border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
-              color: #f1f5f9;
-              font-size: 11px;
-              font-weight: 600;
-              padding: 2px 7px;
-              border-radius: 6px;
-              pointer-events: none;
-              box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            ">
-              ${node.name}
-            </div>
-          </div>
-        `,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
-      });
-
-      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
-
-      marker.on("click", () => {
-        setSelectedNodeId(node.id);
-        map.flyTo([lat, lng], 14, { duration: 0.8 });
-      });
-
-      markersRef.current.set(node.id, marker);
-    });
-  }
+    nodesRef.current = nodes;
+    readingsRef.current = readings;
+    selectedRef.current = selectedNodeId;
+    syncMarkers();
+  }, [nodes, readings, selectedNodeId]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? nodes[0];
   const selectedReading = selectedNode ? getReading(selectedNode.id) : null;
-  const isSelectedLive = selectedNode?.id === "NODE-001" || selectedNode?.id === "NODE-004";
+  const isSelectedLive = selectedNode ? LIVE_NODE_IDS.has(selectedNode.id) : false;
 
   const handleSelectNode = (node: MonitoringNode) => {
     setSelectedNodeId(node.id);
     const lat = node.location?.latitude;
     const lng = node.location?.longitude;
-    if (lat && lng && mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([lat, lng], 14, { duration: 0.8 });
+    const map = mapInstanceRef.current;
+    if (lat !== undefined && lng !== undefined && map) {
+      map.flyTo([lat, lng], Math.max(map.getZoom(), FOCUS_ZOOM), { duration: 0.6 });
+      markersRef.current.get(node.id)?.marker.openPopup();
     }
   };
 
@@ -213,10 +290,10 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
           </div>
           <div>
             <h2 className="text-section-title" style={{ margin: 0, fontSize: "1rem" }}>
-              Peta Sebaran Node Pemantauan (Surabaya Utara)
+              Peta Sebaran Node Pemantauan (Sebangau, Kalimantan Tengah)
             </h2>
             <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-              Data geografis OpenStreetMap & telemetri sensor real-time dari Supabase
+              OpenStreetMap · klik titik node untuk melihat telemetri real-time yang dikirim node
             </p>
           </div>
         </div>
@@ -225,11 +302,12 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
           {nodes.map((node) => {
             const reading = getReading(node.id);
-            const status = reading?.riskIndex.status ?? "AMAN";
+            const status = reading?.riskIndex.status;
             const isSelected = node.id === selectedNodeId;
             return (
               <button
                 key={node.id}
+                id={`map-node-tab-${node.id}`}
                 type="button"
                 onClick={() => handleSelectNode(node)}
                 style={{
@@ -252,7 +330,7 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
                     width: 7,
                     height: 7,
                     borderRadius: "50%",
-                    backgroundColor: STATUS_COLORS[status],
+                    backgroundColor: status ? STATUS_COLORS[status] : NO_DATA_COLOR,
                   }}
                 />
                 {node.name}
@@ -263,17 +341,10 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
       </div>
 
       {/* Grid Map & Detail Panel */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr minmax(280px, 320px)",
-          minHeight: 380,
-        }}
-        className="map-layout-grid"
-      >
+      <div className="map-layout-grid">
         {/* Kontainer Peta OSM */}
-        <div style={{ position: "relative", minHeight: 380, width: "100%", background: "#0a0f0a" }}>
-          <div ref={mapContainerRef} style={{ width: "100%", height: "100%", minHeight: 380 }} />
+        <div style={{ position: "relative", minHeight: 420, width: "100%", background: "#0a0f0a" }}>
+          <div id="node-map" ref={mapContainerRef} style={{ width: "100%", height: "100%", minHeight: 420 }} />
           <div
             style={{
               position: "absolute",
@@ -286,13 +357,14 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
               borderRadius: "6px",
               border: "1px solid rgba(255,255,255,0.1)",
               fontSize: "0.7rem",
-              color: "var(--text-secondary)",
+              color: "#cbd5e1",
               display: "flex",
               alignItems: "center",
               gap: "6px",
+              pointerEvents: "none",
             }}
           >
-            <Layers size={12} /> Klik titik marker untuk memuat telemetri node
+            <Layers size={12} /> Klik titik node untuk melihat data real-time
           </div>
         </div>
 
@@ -318,7 +390,7 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
                       {selectedNode.name}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "2px" }}>
-                      {selectedNode.blockName ?? "Wilayah Surabaya Utara"}
+                      {selectedNode.blockName ?? "Kalimantan Tengah"}
                     </div>
                     <div style={{ fontSize: "0.7rem", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
                       ID: {selectedNode.id}
@@ -327,29 +399,30 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
                   {selectedReading && <StatusBadge status={selectedReading.riskIndex.status} />}
                 </div>
 
-                {/* Badge Sumber Data Supabase */}
-                {isSelectedLive && (
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      padding: "3px 8px",
-                      borderRadius: "4px",
-                      background: "rgba(34, 197, 94, 0.15)",
-                      color: "#4ade80",
-                      fontSize: "0.7rem",
-                      fontWeight: 600,
-                      marginBottom: "14px",
-                    }}
-                  >
-                    <Radio size={11} className="pulse-live" /> Live Data dari Supabase
-                  </div>
-                )}
+                {/* Badge Sumber Data */}
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "3px 8px",
+                    borderRadius: "4px",
+                    background: isSelectedLive ? "rgba(34, 197, 94, 0.15)" : "rgba(148, 163, 184, 0.12)",
+                    color: isSelectedLive ? "#4ade80" : "var(--text-secondary)",
+                    fontSize: "0.7rem",
+                    fontWeight: 600,
+                    marginBottom: "14px",
+                  }}
+                >
+                  <Radio size={11} className="pulse-live" />
+                  {isSelectedLive ? "Live Data dari Supabase" : "Data Simulasi (dummy)"}
+                </div>
 
                 {/* Indikator Telemetri Terbaru */}
                 {selectedReading ? (
                   <div
+                    key={selectedReading.id}
+                    className="map-telemetry-grid"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
@@ -357,72 +430,34 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
                       marginBottom: "14px",
                     }}
                   >
-                    <div
-                      style={{
-                        padding: "10px",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
-                        Indeks Risiko (IKG)
-                      </div>
+                    <div className="map-telemetry-tile">
+                      <div className="map-telemetry-tile__label">Indeks Risiko (IKG)</div>
                       <div
-                        style={{
-                          fontSize: "1.25rem",
-                          fontWeight: 700,
-                          fontFamily: "var(--font-mono)",
-                          color: STATUS_COLORS[selectedReading.riskIndex.status],
-                        }}
+                        className="map-telemetry-tile__value"
+                        style={{ color: STATUS_COLORS[selectedReading.riskIndex.status] }}
                       >
                         {selectedReading.riskIndex.value}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        padding: "10px",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
-                        TMA
-                      </div>
-                      <div style={{ fontSize: "1.25rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-                        {selectedReading.waterLevel.value} <span style={{ fontSize: "0.75rem", fontWeight: 400 }}>{selectedReading.waterLevel.unit}</span>
+                    <div className="map-telemetry-tile">
+                      <div className="map-telemetry-tile__label">TMA</div>
+                      <div className="map-telemetry-tile__value">
+                        {selectedReading.waterLevel.value}{" "}
+                        <span style={{ fontSize: "0.75rem", fontWeight: 400 }}>{selectedReading.waterLevel.unit}</span>
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        padding: "10px",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
-                        Kelembaban
-                      </div>
-                      <div style={{ fontSize: "1.25rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-                        {selectedReading.soilMoisture.value} <span style={{ fontSize: "0.75rem", fontWeight: 400 }}>{selectedReading.soilMoisture.unit}</span>
+                    <div className="map-telemetry-tile">
+                      <div className="map-telemetry-tile__label">Kelembaban</div>
+                      <div className="map-telemetry-tile__value">
+                        {selectedReading.soilMoisture.value}{" "}
+                        <span style={{ fontSize: "0.75rem", fontWeight: 400 }}>{selectedReading.soilMoisture.unit}</span>
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        padding: "10px",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase" }}>
-                        Koneksi
-                      </div>
+                    <div className="map-telemetry-tile">
+                      <div className="map-telemetry-tile__label">Koneksi</div>
                       <div
                         style={{
                           fontSize: "0.85rem",
@@ -470,7 +505,10 @@ export function NodeMap({ nodes, readings }: NodeMapProps) {
                     </span>
                   </div>
                   <div style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", marginTop: "4px" }}>
-                    Update terakhir: {selectedNode.lastSeenAt ? formatRelativeTime(selectedNode.lastSeenAt) : "Baru saja"}
+                    Data terakhir diterima:{" "}
+                    {selectedReading
+                      ? `${formatTimestamp(selectedReading.recordedAt)} (${formatRelativeTime(selectedReading.recordedAt)})`
+                      : "—"}
                   </div>
                 </div>
               </div>
