@@ -36,6 +36,14 @@ export const mockNodes: MonitoringNode[] = [
     lastSeenAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
     connectionStatus: "ONLINE",
   },
+  {
+    // Live: data diambil dari Supabase (sensor_logs) oleh monitoringService
+    id: "NODE-004",
+    name: "Result",
+    blockName: "Blok B",
+    location: { latitude: -2.1401, longitude: 113.4723 },
+    connectionStatus: "UNKNOWN",
+  },
 ];
 
 // ─── Latest Readings ──────────────────────────────────────────────────────────
@@ -71,8 +79,8 @@ export const mockLatestReadings: MonitoringReading[] = [
 
 export const mockSystemStatus: SystemStatus = {
   overallStatus: "SIAGA",
-  totalNodes: 3,
-  onlineNodes: 3,
+  totalNodes: 4,
+  onlineNodes: 4,
   lastUpdatedAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
   isConnected: true,
 };

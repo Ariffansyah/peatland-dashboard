@@ -28,8 +28,10 @@ export interface MonitoringRepository {
 // REAL_NODE: ESP32 → EMQX → /api/webhook → sensor_logs → /api/readings → di sini
 // Node lain masih data dummy dari @/mocks/monitoring
 
-// ponytail: hanya satu node yang nyata; tambah kolom node_id di sensor_logs saat ESP32 berikutnya terpasang.
+// ponytail: semua node live membaca baris sensor_logs yang sama; tambah kolom node_id di sensor_logs saat ESP32 berikutnya terpasang.
 const REAL_NODE = "NODE-001";
+// NODE-004 "Result" menampilkan hasil (risk_index/IKG) dari sensor_logs yang sama.
+const LIVE_NODES = new Set([REAL_NODE, "NODE-004"]);
 
 type SensorLog = { created_at: string; tma: number; moisture: number; risk_index: number };
 
@@ -60,9 +62,9 @@ const mockTrends = new Map<string, TrendDataPoint[]>();
 const toStatus = (v: number): RiskStatus =>
   v >= RISK_THRESHOLDS.AWAS ? "AWAS" : v >= RISK_THRESHOLDS.SIAGA ? "SIAGA" : "AMAN";
 
-const toReading = (log: SensorLog, prev?: SensorLog): MonitoringReading => ({
-  id: log.created_at,
-  nodeId: REAL_NODE,
+const toReading = (log: SensorLog, prev: SensorLog | undefined, nodeId: string): MonitoringReading => ({
+  id: `${nodeId}-${log.created_at}`,
+  nodeId,
   recordedAt: log.created_at,
   waterLevel: { value: log.tma, unit: "cm" },
   soilMoisture: { value: log.moisture, unit: "%" },
@@ -77,12 +79,12 @@ const toReading = (log: SensorLog, prev?: SensorLog): MonitoringReading => ({
 const highestRisk = (readings: MonitoringReading[]) =>
   readings.reduce<MonitoringReading | null>((w, r) => (!w || r.riskIndex.value > w.riskIndex.value ? r : w), null);
 
-// Semua node + pembacaan terakhirnya; REAL_NODE diganti data Supabase.
+// Semua node + pembacaan terakhirnya; LIVE_NODES diganti data Supabase.
 async function snapshot() {
   const [latest, prev] = await fetchLogs({ limit: 2 });
   return {
     nodes: mockNodes.map((n): MonitoringNode =>
-      n.id !== REAL_NODE
+      !LIVE_NODES.has(n.id)
         ? n
         : {
             ...n,
@@ -90,8 +92,12 @@ async function snapshot() {
             connectionStatus: latest && !isDataStale(latest.created_at) ? "ONLINE" : "OFFLINE",
           }
     ),
-    readings: mockLatestReadings.flatMap((r) =>
-      r.nodeId !== REAL_NODE ? [r] : latest ? [toReading(latest, prev)] : []
+    readings: mockNodes.flatMap((n) =>
+      !LIVE_NODES.has(n.id)
+        ? mockLatestReadings.filter((r) => r.nodeId === n.id)
+        : latest
+          ? [toReading(latest, prev, n.id)]
+          : []
     ),
   };
 }
@@ -155,7 +161,7 @@ class MonitoringService implements MonitoringRepository {
   }
 
   async getTrendData(nodeId: string, period: TimePeriod): Promise<TrendDataPoint[]> {
-    if (nodeId !== REAL_NODE) {
+    if (!LIVE_NODES.has(nodeId)) {
       const key = `${nodeId}-${period}`;
       if (!mockTrends.has(key)) mockTrends.set(key, getMockTrendData(nodeId, period));
       return mockTrends.get(key)!;
