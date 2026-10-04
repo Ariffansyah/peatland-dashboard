@@ -14,7 +14,7 @@ import type {
 export const mockNodes: MonitoringNode[] = [
   {
     id: "NODE-001",
-    name: "Node 001",
+    name: "SoilMoisture",
     blockName: "Blok A",
     location: { latitude: -2.1234, longitude: 113.4567 },
     lastSeenAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
@@ -22,7 +22,7 @@ export const mockNodes: MonitoringNode[] = [
   },
   {
     id: "NODE-002",
-    name: "Node 002",
+    name: "Ultrasonic",
     blockName: "Blok A",
     location: { latitude: -2.1289, longitude: 113.4612 },
     lastSeenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
@@ -30,34 +30,10 @@ export const mockNodes: MonitoringNode[] = [
   },
   {
     id: "NODE-003",
-    name: "Node 003",
+    name: "Temperature",
     blockName: "Blok B",
     location: { latitude: -2.1356, longitude: 113.4698 },
     lastSeenAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
-    connectionStatus: "ONLINE",
-  },
-  {
-    id: "NODE-004",
-    name: "Node 004",
-    blockName: "Blok B",
-    location: { latitude: -2.1401, longitude: 113.4723 },
-    lastSeenAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    connectionStatus: "ONLINE",
-  },
-  {
-    id: "NODE-005",
-    name: "Node 005",
-    blockName: "Blok C",
-    location: { latitude: -2.1478, longitude: 113.4789 },
-    lastSeenAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    connectionStatus: "OFFLINE",
-  },
-  {
-    id: "NODE-006",
-    name: "Node 006",
-    blockName: "Blok C",
-    location: { latitude: -2.1512, longitude: 113.4834 },
-    lastSeenAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
     connectionStatus: "ONLINE",
   },
 ];
@@ -89,38 +65,14 @@ export const mockLatestReadings: MonitoringReading[] = [
     soilMoisture: { value: 41, unit: "%" },
     riskIndex: { value: 74, status: "AWAS", calculatedAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(), previousValue: 68 },
   },
-  {
-    id: "READ-004-LATEST",
-    nodeId: "NODE-004",
-    recordedAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    waterLevel: { value: -27, unit: "cm" },
-    soilMoisture: { value: 73, unit: "%" },
-    riskIndex: { value: 38, status: "SIAGA", calculatedAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(), previousValue: 36 },
-  },
-  {
-    id: "READ-005-LATEST",
-    nodeId: "NODE-005",
-    recordedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    waterLevel: { value: -22, unit: "cm" },
-    soilMoisture: { value: 76, unit: "%" },
-    riskIndex: { value: 28, status: "AMAN", calculatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString() },
-  },
-  {
-    id: "READ-006-LATEST",
-    nodeId: "NODE-006",
-    recordedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    waterLevel: { value: -35, unit: "cm" },
-    soilMoisture: { value: 61, unit: "%" },
-    riskIndex: { value: 51, status: "SIAGA", calculatedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(), previousValue: 48 },
-  },
 ];
 
 // ─── System Status ────────────────────────────────────────────────────────────
 
 export const mockSystemStatus: SystemStatus = {
   overallStatus: "SIAGA",
-  totalNodes: 6,
-  onlineNodes: 5,
+  totalNodes: 3,
+  onlineNodes: 3,
   lastUpdatedAt: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
   isConnected: true,
 };
@@ -131,7 +83,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-001",
     nodeId: "NODE-003",
-    nodeName: "Node 003",
+    nodeName: "Temperature",
     blockName: "Blok B",
     status: "AWAS",
     title: "Status Kerawanan AWAS",
@@ -142,7 +94,7 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-002",
     nodeId: "NODE-001",
-    nodeName: "Node 001",
+    nodeName: "SoilMoisture",
     blockName: "Blok A",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
@@ -152,9 +104,9 @@ export const mockAlerts: RiskAlert[] = [
   },
   {
     id: "ALERT-003",
-    nodeId: "NODE-006",
-    nodeName: "Node 006",
-    blockName: "Blok C",
+    nodeId: "NODE-002",
+    nodeName: "Ultrasonic",
+    blockName: "Blok A",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
     message: "TMA mencapai -35 cm. Kelembaban tanah menurun ke 61%.",
@@ -164,23 +116,12 @@ export const mockAlerts: RiskAlert[] = [
   {
     id: "ALERT-004",
     nodeId: "NODE-003",
-    nodeName: "Node 003",
+    nodeName: "Temperature",
     blockName: "Blok B",
     status: "SIAGA",
     title: "Perubahan Status ke Siaga",
     message: "Kondisi hidrologi mulai memburuk. TMA turun ke -38 cm.",
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    acknowledged: true,
-  },
-  {
-    id: "ALERT-005",
-    nodeId: "NODE-004",
-    nodeName: "Node 004",
-    blockName: "Blok B",
-    status: "SIAGA",
-    title: "Perubahan Status ke Siaga",
-    message: "Indeks kerawanan meningkat ke 38. TMA di -27 cm.",
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
     acknowledged: true,
   },
 ];
@@ -197,9 +138,6 @@ function generateTrendData(nodeId: string, hours: number): TrendDataPoint[] {
     "NODE-001": { wl: -28, sm: 72, ri: 35 },
     "NODE-002": { wl: -16, sm: 83, ri: 20 },
     "NODE-003": { wl: -38, sm: 48, ri: 58 },
-    "NODE-004": { wl: -24, sm: 75, ri: 32 },
-    "NODE-005": { wl: -20, sm: 78, ri: 25 },
-    "NODE-006": { wl: -30, sm: 65, ri: 44 },
   };
 
   const seed = seeds[nodeId] ?? { wl: -25, sm: 70, ri: 30 };
