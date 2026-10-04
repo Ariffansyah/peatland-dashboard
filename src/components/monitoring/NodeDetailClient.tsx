@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/status/StatusBadge";
 import { RiskTrendChart, WaterLevelChart, SoilMoistureChart } from "@/components/charts/Charts";
 import { LoadingSkeleton, ErrorState } from "@/components/ui/States";
 import { formatRelativeTime, formatFullDate } from "@/lib/constants";
+import { usePolling } from "@/lib/usePolling";
 
 interface NodeDetailClientProps {
   nodeId: string;
@@ -30,35 +31,32 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
   const [loadingSm, setLoadingSm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMain = useCallback(async () => {
-    setError(null);
-    setLoadingMain(true);
+  // Grafik dimuat oleh effect di bawah setelah loadingMain selesai, sesuai periode terpilih
+  const fetchMain = useCallback(async (silent = false) => {
+    if (!silent) {
+      setError(null);
+      setLoadingMain(true);
+    }
     try {
-      const [nodeData, readingData, trend, wl, sm] = await Promise.all([
+      const [nodeData, readingData] = await Promise.all([
         monitoringRepository.getNode(nodeId),
         monitoringRepository.getLatestReading(nodeId),
-        monitoringRepository.getTrendData(nodeId, "24h"),
-        monitoringRepository.getTrendData(nodeId, "24h"),
-        monitoringRepository.getTrendData(nodeId, "24h"),
       ]);
       if (!nodeData) {
-        setError(`Node ${nodeId} tidak ditemukan.`);
+        if (!silent) setError(`Node ${nodeId} tidak ditemukan.`);
         return;
       }
       setNode(nodeData);
       setReading(readingData);
-      setTrendData(trend);
-      setWlData(wl);
-      setSmData(sm);
     } catch {
-      setError("Gagal memuat detail node.");
+      if (!silent) setError("Gagal memuat detail node.");
     } finally {
       setLoadingMain(false);
     }
   }, [nodeId]);
 
-  const fetchTrend = useCallback(async (period: TimePeriod) => {
-    setLoadingTrend(true);
+  const fetchTrend = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingTrend(true);
     try {
       const data = await monitoringRepository.getTrendData(nodeId, period);
       setTrendData(data);
@@ -67,8 +65,8 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
     }
   }, [nodeId]);
 
-  const fetchWl = useCallback(async (period: TimePeriod) => {
-    setLoadingWl(true);
+  const fetchWl = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingWl(true);
     try {
       const data = await monitoringRepository.getTrendData(nodeId, period);
       setWlData(data);
@@ -77,8 +75,8 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
     }
   }, [nodeId]);
 
-  const fetchSm = useCallback(async (period: TimePeriod) => {
-    setLoadingSm(true);
+  const fetchSm = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingSm(true);
     try {
       const data = await monitoringRepository.getTrendData(nodeId, period);
       setSmData(data);
@@ -91,6 +89,10 @@ export function NodeDetailClient({ nodeId }: NodeDetailClientProps) {
   useEffect(() => { if (!loadingMain) fetchTrend(trendPeriod); }, [trendPeriod, fetchTrend, loadingMain]);
   useEffect(() => { if (!loadingMain) fetchWl(wlPeriod); }, [wlPeriod, fetchWl, loadingMain]);
   useEffect(() => { if (!loadingMain) fetchSm(smPeriod); }, [smPeriod, fetchSm, loadingMain]);
+
+  usePolling(() =>
+    Promise.all([fetchMain(true), fetchTrend(trendPeriod, true), fetchWl(wlPeriod, true), fetchSm(smPeriod, true)])
+  );
 
   if (error) {
     return (

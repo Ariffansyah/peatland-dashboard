@@ -74,7 +74,7 @@ export function ErrorState({ message = "Terjadi kesalahan saat memuat data.", on
       <div className="state-title">Gagal Memuat Data</div>
       <div className="state-desc">{message}</div>
       {onRetry && (
-        <button className="btn-retry" onClick={onRetry} aria-label="Coba lagi">
+        <button className="btn-retry" onClick={() => onRetry()} aria-label="Coba lagi">
           <RefreshCw size={14} aria-hidden="true" />
           Coba Lagi
         </button>

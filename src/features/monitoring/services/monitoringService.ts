@@ -5,18 +5,13 @@ import type {
   MonitoringNode,
   MonitoringReading,
   RiskAlert,
+  RiskStatus,
   SystemStatus,
   TimePeriod,
   TrendDataPoint,
 } from "@/types/domain";
-import {
-  getMockGlobalTrendData,
-  getMockTrendData,
-  mockAlerts,
-  mockLatestReadings,
-  mockNodes,
-  mockSystemStatus,
-} from "@/mocks/monitoring";
+import { RISK_THRESHOLDS, isDataStale } from "@/lib/constants";
+import { getMockTrendData, mockAlerts, mockLatestReadings, mockNodes } from "@/mocks/monitoring";
 
 export interface MonitoringRepository {
   getSystemStatus(): Promise<SystemStatus>;
@@ -29,70 +24,165 @@ export interface MonitoringRepository {
   getAlerts(params?: { nodeId?: string; status?: string }): Promise<RiskAlert[]>;
 }
 
-// ─── Mock Implementation ──────────────────────────────────────────────────────
-// Ganti kelas ini dengan SupabaseMonitoringRepository saat backend siap
+// ─── Supabase + Mock Implementation ───────────────────────────────────────────
+// REAL_NODE: ESP32 → EMQX → /api/webhook → sensor_logs → /api/readings → di sini
+// Node lain masih data dummy dari @/mocks/monitoring
 
-class MockMonitoringRepository implements MonitoringRepository {
-  private delay(ms = 600) {
-    return new Promise((res) => setTimeout(res, ms));
+// ponytail: hanya satu node yang nyata; tambah kolom node_id di sensor_logs saat ESP32 berikutnya terpasang.
+const REAL_NODE = "NODE-001";
+
+type SensorLog = { created_at: string; tma: number; moisture: number; risk_index: number };
+
+const PERIOD_HOURS: Record<TimePeriod, number> = { "24h": 24, "7d": 168, "30d": 720 };
+
+// Request identik yang berjalan bersamaan (mis. 4 kartu dashboard tiap poll) berbagi satu fetch.
+// Hasilnya dipakai bersama, jadi jangan dimutasi (pakai toReversed, bukan reverse).
+const inflight = new Map<string, Promise<SensorLog[]>>();
+
+function fetchLogs(params: Record<string, number>): Promise<SensorLog[]> {
+  const url = `/api/readings?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))}`;
+  let req = inflight.get(url);
+  if (!req) {
+    req = fetch(url, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`/api/readings ${res.status}`);
+        return res.json();
+      })
+      .finally(() => inflight.delete(url));
+    inflight.set(url, req);
   }
+  return req;
+}
 
+// Data dummy acak dibuat sekali per node+periode agar grafik tidak berubah tiap poll.
+const mockTrends = new Map<string, TrendDataPoint[]>();
+
+const toStatus = (v: number): RiskStatus =>
+  v >= RISK_THRESHOLDS.AWAS ? "AWAS" : v >= RISK_THRESHOLDS.SIAGA ? "SIAGA" : "AMAN";
+
+const toReading = (log: SensorLog, prev?: SensorLog): MonitoringReading => ({
+  id: log.created_at,
+  nodeId: REAL_NODE,
+  recordedAt: log.created_at,
+  waterLevel: { value: log.tma, unit: "cm" },
+  soilMoisture: { value: log.moisture, unit: "%" },
+  riskIndex: {
+    value: log.risk_index,
+    status: toStatus(log.risk_index),
+    calculatedAt: log.created_at,
+    previousValue: prev?.risk_index,
+  },
+});
+
+const highestRisk = (readings: MonitoringReading[]) =>
+  readings.reduce<MonitoringReading | null>((w, r) => (!w || r.riskIndex.value > w.riskIndex.value ? r : w), null);
+
+// Semua node + pembacaan terakhirnya; REAL_NODE diganti data Supabase.
+async function snapshot() {
+  const [latest, prev] = await fetchLogs({ limit: 2 });
+  return {
+    nodes: mockNodes.map((n): MonitoringNode =>
+      n.id !== REAL_NODE
+        ? n
+        : {
+            ...n,
+            lastSeenAt: latest?.created_at,
+            connectionStatus: latest && !isDataStale(latest.created_at) ? "ONLINE" : "OFFLINE",
+          }
+    ),
+    readings: mockLatestReadings.flatMap((r) =>
+      r.nodeId !== REAL_NODE ? [r] : latest ? [toReading(latest, prev)] : []
+    ),
+  };
+}
+
+// Alert = setiap perubahan status IKG antar pembacaan REAL_NODE (logs urut lama → baru).
+function statusChanges(logs: SensorLog[]): RiskAlert[] {
+  const node = mockNodes.find((n) => n.id === REAL_NODE);
+  const alerts: RiskAlert[] = [];
+  let prev: SensorLog | undefined;
+  for (const log of logs) {
+    const status = toStatus(log.risk_index);
+    if (status !== toStatus(prev?.risk_index ?? 0)) {
+      alerts.push({
+        id: `${REAL_NODE}-${log.created_at}`,
+        nodeId: REAL_NODE,
+        nodeName: node?.name,
+        blockName: node?.blockName,
+        status,
+        title: `Perubahan Status ke ${status}`,
+        message:
+          (prev
+            ? `Indeks kerawanan berubah dari ${prev.risk_index} menjadi ${log.risk_index}.`
+            : `Indeks kerawanan ${log.risk_index}.`) + ` TMA ${log.tma} cm, kelembaban tanah ${log.moisture}%.`,
+        createdAt: log.created_at,
+      });
+    }
+    prev = log;
+  }
+  return alerts;
+}
+
+class MonitoringService implements MonitoringRepository {
   async getSystemStatus(): Promise<SystemStatus> {
-    await this.delay(400);
-    return mockSystemStatus;
+    const { nodes, readings } = await snapshot();
+    return {
+      overallStatus: highestRisk(readings)?.riskIndex.status ?? "AMAN",
+      totalNodes: nodes.length,
+      onlineNodes: nodes.filter((n) => n.connectionStatus === "ONLINE").length,
+      lastUpdatedAt: readings.map((r) => r.recordedAt).sort().at(-1) ?? new Date().toISOString(),
+      isConnected: true,
+    };
   }
 
   async getLatestReading(nodeId?: string): Promise<MonitoringReading | null> {
-    await this.delay();
-    if (nodeId) {
-      return mockLatestReadings.find((r) => r.nodeId === nodeId) ?? null;
-    }
-    // Return reading dengan risk tertinggi sebagai global overview
-    return mockLatestReadings.reduce((prev, curr) =>
-      curr.riskIndex.value > prev.riskIndex.value ? curr : prev
-    );
+    const { readings } = await snapshot();
+    if (nodeId) return readings.find((r) => r.nodeId === nodeId) ?? null;
+    // Reading dengan risk tertinggi sebagai global overview
+    return highestRisk(readings);
   }
 
   async getLatestReadings(): Promise<MonitoringReading[]> {
-    await this.delay();
-    return mockLatestReadings;
+    return (await snapshot()).readings;
   }
 
   async getNodes(): Promise<MonitoringNode[]> {
-    await this.delay(300);
-    return mockNodes;
+    return (await snapshot()).nodes;
   }
 
   async getNode(nodeId: string): Promise<MonitoringNode | null> {
-    await this.delay(300);
-    return mockNodes.find((n) => n.id === nodeId) ?? null;
+    return (await this.getNodes()).find((n) => n.id === nodeId) ?? null;
   }
 
   async getTrendData(nodeId: string, period: TimePeriod): Promise<TrendDataPoint[]> {
-    await this.delay(800);
-    return getMockTrendData(nodeId, period);
+    if (nodeId !== REAL_NODE) {
+      const key = `${nodeId}-${period}`;
+      if (!mockTrends.has(key)) mockTrends.set(key, getMockTrendData(nodeId, period));
+      return mockTrends.get(key)!;
+    }
+    return (await fetchLogs({ hours: PERIOD_HOURS[period] })).toReversed().map((l) => ({
+      timestamp: l.created_at,
+      waterLevel: l.tma,
+      soilMoisture: l.moisture,
+      riskIndex: l.risk_index,
+    }));
   }
 
+  // Global trend mengikuti node nyata, seperti sebelumnya mengikuti NODE-001
   async getGlobalTrendData(period: TimePeriod): Promise<TrendDataPoint[]> {
-    await this.delay(800);
-    return getMockGlobalTrendData(period);
+    return this.getTrendData(REAL_NODE, period);
   }
 
+  // ponytail: alert REAL_NODE dihitung ulang dari 30 hari pembacaan tiap request, "acknowledged" tidak disimpan; buat tabel alerts bila perlu riwayat/ack.
   async getAlerts(params?: { nodeId?: string; status?: string }): Promise<RiskAlert[]> {
-    await this.delay(400);
-    let alerts = [...mockAlerts];
-    if (params?.nodeId) {
-      alerts = alerts.filter((a) => a.nodeId === params.nodeId);
-    }
-    if (params?.status && params.status !== "ALL") {
-      alerts = alerts.filter((a) => a.status === params.status);
-    }
-    return alerts;
+    const real = statusChanges((await fetchLogs({ hours: PERIOD_HOURS["30d"] })).toReversed());
+    let alerts = [...real, ...mockAlerts.filter((a) => a.nodeId !== REAL_NODE)];
+    if (params?.nodeId) alerts = alerts.filter((a) => a.nodeId === params.nodeId);
+    if (params?.status && params.status !== "ALL") alerts = alerts.filter((a) => a.status === params.status);
+    return alerts.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }
 }
 
 // ─── Singleton Instance ───────────────────────────────────────────────────────
-// Tukar dengan SupabaseMonitoringRepository di sini saat integrasi
 
-export const monitoringRepository: MonitoringRepository =
-  new MockMonitoringRepository();
+export const monitoringRepository: MonitoringRepository = new MonitoringService();
