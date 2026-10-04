@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ShieldCheck, AlertTriangle, AlertOctagon, ArrowRight } from "lucide-react";
 import { monitoringRepository } from "@/features/monitoring/services/monitoringService";
 import type { RiskAlert, RiskStatus } from "@/types/domain";
+import { usePolling } from "@/lib/usePolling";
 import { LoadingSkeleton, EmptyState, ErrorState } from "@/components/ui/States";
 import { formatRelativeTime, formatFullDate } from "@/lib/constants";
 
@@ -22,20 +23,23 @@ export function AlertsClient() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AlertFilter>("ALL");
 
-  const fetchAlerts = useCallback(async () => {
-    setError(null);
-    setLoading(true);
+  const fetchAlerts = useCallback(async (silent = false) => {
+    if (!silent) {
+      setError(null);
+      setLoading(true);
+    }
     try {
       const data = await monitoringRepository.getAlerts();
       setAlerts(data);
     } catch {
-      setError("Gagal memuat data alerts.");
+      if (!silent) setError("Gagal memuat data alerts.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
+  usePolling(() => fetchAlerts(true));
 
   const filtered = filter === "ALL" ? alerts : alerts.filter((a) => a.status === filter);
   const awasCount = alerts.filter((a) => a.status === "AWAS").length;

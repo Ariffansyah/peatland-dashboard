@@ -6,6 +6,7 @@ import Link from "next/link";
 import { monitoringRepository } from "@/features/monitoring/services/monitoringService";
 import type { MonitoringNode, MonitoringReading, RiskStatus } from "@/types/domain";
 import { StatusBadge } from "@/components/status/StatusBadge";
+import { usePolling } from "@/lib/usePolling";
 import { LoadingSkeleton, EmptyState, ErrorState } from "@/components/ui/States";
 import { formatRelativeTime } from "@/lib/constants";
 import { Wifi, WifiOff, ArrowRight } from "lucide-react";
@@ -22,9 +23,11 @@ export function MonitoringClient() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [connectionFilter, setConnectionFilter] = useState<ConnectionFilter>("ALL");
 
-  const fetchData = useCallback(async () => {
-    setError(null);
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setError(null);
+      setLoading(true);
+    }
     try {
       const [nodeList, readingList] = await Promise.all([
         monitoringRepository.getNodes(),
@@ -33,13 +36,14 @@ export function MonitoringClient() {
       setNodes(nodeList);
       setReadings(readingList);
     } catch {
-      setError("Gagal memuat data monitoring.");
+      if (!silent) setError("Gagal memuat data monitoring.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  usePolling(() => fetchData(true));
 
   const getReading = (nodeId: string) => readings.find((r) => r.nodeId === nodeId);
 

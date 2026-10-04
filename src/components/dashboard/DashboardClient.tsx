@@ -11,6 +11,7 @@ import { NodeStatusCard } from "./NodeStatusCard";
 import { RiskTrendChart, WaterLevelChart, SoilMoistureChart } from "@/components/charts/Charts";
 import { NodeRiskOverview } from "./NodeRiskOverview";
 import { LoadingSkeleton, ErrorState } from "@/components/ui/States";
+import { usePolling } from "@/lib/usePolling";
 
 export function DashboardClient() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
@@ -30,9 +31,9 @@ export function DashboardClient() {
   const [loadingSm, setLoadingSm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMain = useCallback(async () => {
+  const fetchMain = useCallback(async (silent = false) => {
     try {
-      setError(null);
+      if (!silent) setError(null);
       const [status, reading, nodeList, readings] = await Promise.all([
         monitoringRepository.getSystemStatus(),
         monitoringRepository.getLatestReading(),
@@ -44,14 +45,14 @@ export function DashboardClient() {
       setNodes(nodeList);
       setAllReadings(readings);
     } catch {
-      setError("Gagal memuat data dashboard.");
+      if (!silent) setError("Gagal memuat data dashboard.");
     } finally {
       setLoadingMain(false);
     }
   }, []);
 
-  const fetchTrend = useCallback(async (period: TimePeriod) => {
-    setLoadingTrend(true);
+  const fetchTrend = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingTrend(true);
     try {
       const data = await monitoringRepository.getGlobalTrendData(period);
       setTrendData(data);
@@ -60,8 +61,8 @@ export function DashboardClient() {
     }
   }, []);
 
-  const fetchWl = useCallback(async (period: TimePeriod) => {
-    setLoadingWl(true);
+  const fetchWl = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingWl(true);
     try {
       const data = await monitoringRepository.getGlobalTrendData(period);
       setWlData(data);
@@ -70,8 +71,8 @@ export function DashboardClient() {
     }
   }, []);
 
-  const fetchSm = useCallback(async (period: TimePeriod) => {
-    setLoadingSm(true);
+  const fetchSm = useCallback(async (period: TimePeriod, silent = false) => {
+    if (!silent) setLoadingSm(true);
     try {
       const data = await monitoringRepository.getGlobalTrendData(period);
       setSmData(data);
@@ -90,6 +91,10 @@ export function DashboardClient() {
   useEffect(() => { fetchTrend(trendPeriod); }, [trendPeriod, fetchTrend]);
   useEffect(() => { fetchWl(wlPeriod); }, [wlPeriod, fetchWl]);
   useEffect(() => { fetchSm(smPeriod); }, [smPeriod, fetchSm]);
+
+  usePolling(() =>
+    Promise.all([fetchMain(true), fetchTrend(trendPeriod, true), fetchWl(wlPeriod, true), fetchSm(smPeriod, true)])
+  );
 
   if (error) {
     return (
