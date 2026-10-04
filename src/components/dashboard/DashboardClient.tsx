@@ -12,6 +12,17 @@ import { RiskTrendChart, WaterLevelChart, SoilMoistureChart, TemperatureChart } 
 import { NodeRiskOverview } from "./NodeRiskOverview";
 import { LoadingSkeleton, ErrorState } from "@/components/ui/States";
 import { usePolling } from "@/lib/usePolling";
+import dynamic from "next/dynamic";
+
+const NodeMap = dynamic(
+  () => import("./NodeMap").then((mod) => mod.NodeMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="skeleton" style={{ height: 420, borderRadius: "var(--radius-lg)" }} />
+    ),
+  }
+);
 
 export function DashboardClient() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
@@ -193,6 +204,13 @@ export function DashboardClient() {
           />
         </div>
       </div>
+
+      {/* OpenStreetMap Sebaran Node Surabaya Utara */}
+      {!loadingMain && (
+        <div data-aos="fade-up" data-aos-duration="450" style={{ marginBottom: "var(--space-5)" }}>
+          <NodeMap nodes={nodes} readings={allReadings} />
+        </div>
+      )}
 
       {/* Node Overview */}
       {!loadingMain && (

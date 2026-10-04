@@ -10,6 +10,7 @@ import { usePolling } from "@/lib/usePolling";
 import { LoadingSkeleton, EmptyState, ErrorState } from "@/components/ui/States";
 import { formatRelativeTime, SENSOR_META } from "@/lib/constants";
 import { Wifi, WifiOff, ArrowRight } from "lucide-react";
+import { NodeMiniChart } from "./NodeMiniChart";
 
 type StatusFilter = "ALL" | RiskStatus;
 type ConnectionFilter = "ALL" | "ONLINE" | "OFFLINE";
@@ -225,34 +226,38 @@ export function MonitoringClient() {
                 </div>
 
                 {reading ? (
-                  <div className="node-card-params">
-                    <div className="node-card-param">
-                      <span className="node-card-param-label">Indeks</span>
-                      <span
-                        className="node-card-param-value"
-                        style={{ color: `var(--status-${statusCls})` }}
-                      >
-                        {reading.riskIndex.value}
-                      </span>
+                  <>
+                    <div className="node-card-params">
+                      <div className="node-card-param">
+                        <span className="node-card-param-label">Indeks</span>
+                        <span
+                          className="node-card-param-value"
+                          style={{ color: `var(--status-${statusCls})` }}
+                        >
+                          {reading.riskIndex.value}
+                        </span>
+                      </div>
+                      {(() => {
+                        const param = getSensorParam(node, reading);
+                        return param ? (
+                          <div className="node-card-param">
+                            <span className="node-card-param-label">{param.label}</span>
+                            <span className="node-card-param-value">
+                              {param.value} {param.unit}
+                            </span>
+                          </div>
+                        ) : null;
+                      })()}
+                      <div className="node-card-param">
+                        <span className="node-card-param-label">ID Node</span>
+                        <span className="node-card-param-value" style={{ fontSize: "0.875rem", fontFamily: "var(--font-mono)" }}>
+                          {node.id}
+                        </span>
+                      </div>
                     </div>
-                    {(() => {
-                      const param = getSensorParam(node, reading);
-                      return param ? (
-                        <div className="node-card-param">
-                          <span className="node-card-param-label">{param.label}</span>
-                          <span className="node-card-param-value">
-                            {param.value} {param.unit}
-                          </span>
-                        </div>
-                      ) : null;
-                    })()}
-                    <div className="node-card-param">
-                      <span className="node-card-param-label">ID Node</span>
-                      <span className="node-card-param-value" style={{ fontSize: "0.875rem", fontFamily: "var(--font-mono)" }}>
-                        {node.id}
-                      </span>
-                    </div>
-                  </div>
+                    {/* Grafik mini tren parameter node */}
+                    <NodeMiniChart nodeId={node.id} status={reading?.riskIndex.status ?? "AMAN"} />
+                  </>
                 ) : (
                   <div style={{ color: "var(--text-tertiary)", fontSize: "0.875rem" }}>
                     Belum ada pembacaan
